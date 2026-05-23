@@ -9,3 +9,4 @@ Welcome to the Theoretica tutorials, where you can find step-by-step guides that
 - @subpage tut_autodiff
 - @subpage tut_diffeq
 - @subpage tut_calculus
+- @subpage tut_polynomials
