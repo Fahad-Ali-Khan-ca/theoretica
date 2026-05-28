@@ -497,6 +497,30 @@ int main(int argc, char const *argv[]) {
 		fact_opt
 	);
 
+	ctx.equals(
+		"gcd(0, 0)",
+		gcd(0, 0),
+		0
+	);
+
+	ctx.equals(
+		"gcd(48, 18)",
+		gcd(48, 18),
+		6
+	);
+
+	ctx.equals(
+		"gcd(3, -12)",
+		gcd(3, -12),
+		3
+	);
+
+	ctx.equals(
+		"gcd(-6, -12)",
+		gcd(-6, -12),
+		6
+	);
+
 
 	// Test special.h
 
