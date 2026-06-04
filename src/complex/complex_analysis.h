@@ -63,21 +63,7 @@ namespace theoretica {
 	/// @return The complex number \f$z^p\f$, computed using polar coordinates
 	template<typename T>
 	inline complex<T> powf(complex<T> z, real p) {
-
-		if(abs(z.Re()) < MACH_EPSILON && abs(z.Im()) < MACH_EPSILON) {
-
-			if(abs(p) < MACH_EPSILON) {
-				TH_MATH_ERROR("powf(complex, real)", 0, MathError::ImpossibleOperation);
-				return complex<T>(nan(), nan());
-			}
-
-			return complex<T>(0, 0);
-		}
-
-		const real rho = powf(z.norm(), p);
-		const real theta = p * z.arg();
-
-		return complex<T>(rho * th::cos(theta), rho * th::sin(theta));
+		return exp(p * ln(z));
 	}
 	
 

@@ -128,14 +128,19 @@ namespace theoretica {
 	/// @param f The function to integrate
 	/// @param a The lower extreme of integration
 	/// @param b The upper extreme of integration
-	/// @param steps The number of steps
+	/// @param steps The number of steps (must be even)
 	/// @return An approximation of the integral of f
 	template<typename RealFunction>
 	inline real integral_simpson(RealFunction f, real a, real b,
 		unsigned int steps = CALCULUS_INTEGRAL_STEPS) {
 
-		if(steps == 0) {
+		if (steps == 0) {
 			TH_MATH_ERROR("integral_simpson", steps, MathError::DivByZero);
+			return nan();
+		}
+
+		if (steps % 2 != 0) {
+			TH_MATH_ERROR("integral_simpson", steps, MathError::InvalidArgument);
 			return nan();
 		}
 		

@@ -265,7 +265,7 @@ namespace theoretica {
 		/// structure, holding a vector t of time values and a vector x of the variables.
 		template <
 			typename Vector, typename OdeFunction = ode_function<Vector>,
-			typename StepFunction = std::function<Vector(OdeFunction, real, const Vector&)>
+			typename StepFunction
 		>
 		inline ode_solution_t<Vector>
 		solve_fixstep(
