@@ -261,8 +261,8 @@ namespace theoretica {
 	}
 
 
-	/// Compute the floor of x
-	/// Computes the maximum integer number that is smaller than x
+	/// Compute the floor of x, as the maximum integer
+	/// number that is smaller than x.
 	/// @param x A real number
 	/// @return The floor of x
 	///
@@ -640,7 +640,7 @@ namespace theoretica {
 	/// non-negative power of objects which are not strictly numbers
 	/// but have a multiplication operation.
 	template<typename T = real>
-	TH_CONSTEXPR inline T ipow(T x, unsigned int n, T neutral_element = T(1)) {
+	TH_CONSTEXPR inline T ipow(T x, unsigned int n, T neutral_element = T(1.0)) {
 
 		if(n == 0)
 			return neutral_element;
@@ -1273,6 +1273,25 @@ namespace theoretica {
 	}
 
 
+	/// Compute the greatest common divisor of two numbers using Euclid's algorithm.
+	///
+	/// @param a An integer number
+	/// @param b An integer number
+	/// @return The greatest common divisor of a and b
+	template <
+		typename Integer1, typename Integer2,
+		typename = std::enable_if_t<std::is_integral<Integer1>::value>,
+		typename = std::enable_if_t<std::is_integral<Integer2>::value>
+	>
+	Integer1 gcd(Integer1 a, Integer2 b) {
+
+		if (b == 0)
+			return a > 0 ? a : -a;
+
+		return gcd(b, a % b);
+	}
+
+
 	/// Convert degrees to radians
 	/// @param degrees An angle in degrees
 	/// @return The converted angle in radians
@@ -1307,6 +1326,25 @@ namespace theoretica {
 	template<typename IntType = unsigned long long int>
 	TH_CONSTEXPR inline IntType catalan(unsigned int n) {
 		return binomial_coeff(2 * n, n) / (n + 1);
+	}
+
+
+	/// Create a number representing an error state,
+	/// constructed from a NaN value.
+	///
+	/// This is a valid way to build real, complex,
+	/// dual and quaternion numbers representing NaNs.
+	/// For constructing NaN states for vector-like
+	/// types, the overload in algebra.h should be used.
+	///
+	/// @tparam Type The type of the number to create
+	/// @return A number representing an error state
+	template <
+		typename Type = real,
+		disable_vector<Type> = true
+	>
+	TH_CONSTEXPR inline Type make_error() {
+		return Type(nan());
 	}
 
 }

@@ -52,16 +52,7 @@ namespace theoretica {
 	/// @param z A complex number
 	template<typename T>
 	inline complex<T> cube(complex<T> z) {
-
-		// Use the algebraic identity minimizing multiplications
-		// (a + bi)^3 = (a^3 - 3ab^2) + (3a^2b - b^3)i
-		const T a2 = z.Re() * z.Re();
-		const T b2 = z.Im() * z.Im();
-
-		const T real_factor = a2 - T(3) * b2;
-		const T imag_factor = T(3) * a2 - b2;
-
-		return complex<T>(z.Re() * real_factor, z.Im() * imag_factor);
+		return z * z * z;
 	}
 
 
@@ -72,21 +63,7 @@ namespace theoretica {
 	/// @return The complex number \f$z^p\f$, computed using polar coordinates
 	template<typename T>
 	inline complex<T> powf(complex<T> z, real p) {
-
-		if(abs(z.Re()) < MACH_EPSILON && abs(z.Im()) < MACH_EPSILON) {
-
-			if(abs(p) < MACH_EPSILON) {
-				TH_MATH_ERROR("powf(complex, real)", 0, MathError::ImpossibleOperation);
-				return complex<T>(nan(), nan());
-			}
-
-			return complex<T>(0, 0);
-		}
-
-		const real rho = powf(z.norm(), p);
-		const real theta = p * z.arg();
-
-		return complex<T>(rho * th::cos(theta), rho * th::sin(theta));
+		return exp(p * ln(z));
 	}
 	
 
@@ -144,9 +121,13 @@ namespace theoretica {
 		if(abs(z.a) < MACH_EPSILON && abs(z.b) < MACH_EPSILON)
 			return complex<T>(0);
 
+
+		// Left-sided sign function for continuity along the negative real axis
+		const T imag_sign = (z.Im() < 0) ? T(-1.0) : T(1.0);
+
 		return complex<T>(
 			INVSQR2 * sqrt((z.norm() + z.Re())),
-			INVSQR2 * sqrt((z.norm() - z.Re()))  * sgn(z.b));
+			INVSQR2 * sqrt((z.norm() - z.Re())) * imag_sign);
 	}
 
 

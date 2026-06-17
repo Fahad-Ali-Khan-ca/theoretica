@@ -109,7 +109,7 @@ namespace theoretica {
 					return dual2(nan(), nan(), nan());
 				}
 
-				return dual2(1.0 / a, -b / square(a), 2 * b / cube(a));
+				return dual2(1.0 / a, -b / square(a), 2.0 * square(b) / cube(a) - c / square(a));
 			}
 
 			/// Identity (for consistency)
@@ -207,9 +207,13 @@ namespace theoretica {
 			/// Multiply this dual number by another one
 			inline dual2& operator*=(const dual2& other) {
 
-				a = (a * other.a);
-				b = (a * other.b) + (b * other.a);
-				c = (a * other.c) + (2 * b * other.b) + (c * other.a);
+				const real a_old = a;
+				const real b_old = b;
+				const real c_old = c;
+				
+				a = (a_old * other.a);
+				b = (a_old * other.b) + (b_old * other.a);
+				c = (a_old * other.c) + (2 * b_old * other.b) + (c_old * other.a);
 				return *this;
 			}
 
@@ -248,7 +252,7 @@ namespace theoretica {
 
 			/// Check whether two dual numbers have the same
 			/// real and dual parts
-			inline bool operator==(const dual2& other) {
+			inline bool operator==(const dual2& other) const {
 				return (a == other.a) && (b == other.b) && (c == other.c);
 			}
 
@@ -295,8 +299,8 @@ namespace theoretica {
 			/// Convert the dual number to string representation
 			/// @param epsilon1 The character to use to represent epsilon1
 			/// @param epsilon2 The character to use to represent epsilon2
-			inline std::string to_string(const std::string& epsilon1 = "e1",
-				const std::string& epsilon2 = "e2") const {
+			inline std::string to_string(const std::string& epsilon1 = "ε",
+				const std::string& epsilon2 = "ε²") const {
 
 				std::stringstream res;
 

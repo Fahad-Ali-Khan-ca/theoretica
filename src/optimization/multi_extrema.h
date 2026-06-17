@@ -28,34 +28,41 @@ namespace theoretica {
 	/// stopping execution of the routine.
 	/// @return The coordinates of the local minimum, 
 	/// NaN if the algorithm did not converge.
-	template<unsigned int N>
-	inline vec<real, N> multi_minimize_grad(
-		multidual<N>(*f)(vec<multidual<N>, N>),
-		vec<real, N> guess = vec<real, N>(0),
+	template <
+		typename Vector = vec<real>,
+		typename ReturnVector = Vector,
+		typename DualObjectiveFunction,
+		autodiff::enable_scalar_field<DualObjectiveFunction> = true
+	>
+	inline ReturnVector multi_minimize_grad(
+		DualObjectiveFunction f,
+		Vector guess,
 		real gamma = OPTIMIZATION_MINGRAD_GAMMA,
 		real tolerance = OPTIMIZATION_MINGRAD_TOLERANCE,
-		unsigned int max_iter = OPTIMIZATION_MINGRAD_ITER) {
+		unsigned int max_iter = OPTIMIZATION_MINGRAD_ITER
+	) {
 
-		if(gamma >= 0) {
+		ReturnVector x = guess;
+
+		if(gamma <= 0) {
 			TH_MATH_ERROR("multi_minimize_grad", gamma, MathError::InvalidArgument);
-			return vec<real, N>(nan());
+			return algebra::vec_error(x);
 		}
 
-		vec<real, N> x = guess;
-		vec<real, N> grad;
+		ReturnVector grad;
 		unsigned int iter = 0;
 
 		do {
 
-			grad = gradient(f, x);
-			x += gamma * grad;
+			grad = autodiff::gradient(f, x);
+			x -= gamma * grad;
 			iter++;
 
-		} while(grad.norm() > OPTIMIZATION_MINGRAD_TOLERANCE && iter <= max_iter);
+		} while(grad.norm() > tolerance && iter <= max_iter);
 
 		if(iter > max_iter) {
 			TH_MATH_ERROR("multi_minimize_grad", iter, MathError::NoConvergence);
-			return vec<real, N>(nan());
+			return algebra::vec_error(x);
 		}
 
 		return x;
@@ -74,15 +81,27 @@ namespace theoretica {
 	/// stopping execution of the routine.
 	/// @return The coordinates of the local maximum, 
 	/// NaN if the algorithm did not converge.
-	template<unsigned int N>
-	inline vec<real, N> multi_maximize_grad(
-		multidual<N>(*f)(vec<multidual<N>, N>),
-		vec<real, N> guess = vec<real, N>(0),
+	template <
+		typename Vector = vec<real>,
+		typename ReturnVector = Vector,
+		typename DualObjectiveFunction,
+		autodiff::enable_scalar_field<DualObjectiveFunction> = true
+	>
+	inline ReturnVector multi_maximize_grad(
+		DualObjectiveFunction f,
+		Vector guess,
 		real gamma = OPTIMIZATION_MINGRAD_GAMMA,
 		real tolerance = OPTIMIZATION_MINGRAD_TOLERANCE,
-		unsigned int max_iter = OPTIMIZATION_MINGRAD_ITER) {
+		unsigned int max_iter = OPTIMIZATION_MINGRAD_ITER
+	) {
 
-		return multi_minimize_grad(f, guess, -gamma, tolerance, max_iter);
+		using ArgType = typename _internal::func_helper<DualObjectiveFunction>::first_arg_type;
+
+		return multi_minimize_grad(
+			[f](ArgType x) { return -f(x); },
+			guess, gamma,
+			tolerance, max_iter
+		);
 	}
 
 
@@ -97,16 +116,24 @@ namespace theoretica {
 	/// stopping execution of the routine.
 	/// @return The coordinates of the local minimum, 
 	/// NaN if the algorithm did not converge.
-	template<unsigned int N>
-	inline vec<real, N> multi_minimize_lingrad(
-		multidual<N>(*f)(vec<multidual<N>, N>),
-		vec<real, N> guess = vec<real, N>(0),
+	template <
+		typename Vector = vec<real>,
+		typename ReturnVector = Vector,
+		typename DualObjectiveFunction,
+		autodiff::enable_scalar_field<DualObjectiveFunction> = true
+	>
+	inline ReturnVector multi_minimize_lingrad(
+		DualObjectiveFunction f,
+		Vector guess,
 		real tolerance = OPTIMIZATION_MINGRAD_TOLERANCE,
-		unsigned int max_iter = OPTIMIZATION_MINGRAD_ITER) {
+		unsigned int max_iter = OPTIMIZATION_MINGRAD_ITER
+	) {
 
-		vec<real, N> x = guess;
-		vec<real, N> grad;
+		ReturnVector x = guess;
+		ReturnVector grad;
 		unsigned int iter = 0;
+
+		constexpr size_t N = ReturnVector::size_argument;
 
 		do {
 
@@ -114,7 +141,7 @@ namespace theoretica {
 
 			// Minimize f(x + gamma * gradient) in [-1, 0]
 			// using Golden Section extrema search
-			real gamma = minimize_goldensection(
+			real gamma = minimize_golden(
 				[f, x, grad](real gamma){
 					return f(multidual<N>::make_argument(x + gamma * grad)).Re();
 				}, -1, 0);
@@ -126,11 +153,11 @@ namespace theoretica {
 			x += gamma * grad;
 			iter++;
 
-		} while(grad.norm() > OPTIMIZATION_MINGRAD_TOLERANCE && iter <= max_iter);
+		} while(grad.norm() > tolerance && iter <= max_iter);
 
 		if(iter > max_iter) {
 			TH_MATH_ERROR("multi_minimize_lingrad", iter, MathError::NoConvergence);
-			return vec<real, N>(nan());
+			return algebra::vec_error(x);
 		}
 
 		return x;
@@ -148,43 +175,24 @@ namespace theoretica {
 	/// stopping execution of the routine.
 	/// @return The coordinates of the local maximum, 
 	/// NaN if the algorithm did not converge.
-	template<unsigned int N>
-	inline vec<real, N> multi_maximize_lingrad(
-		multidual<N>(*f)(vec<multidual<N>, N>),
-		vec<real, N> guess = vec<real, N>(0),
+	template <
+		typename Vector = vec<real>,
+		typename ReturnVector = Vector,
+		typename DualObjectiveFunction,
+		autodiff::enable_scalar_field<DualObjectiveFunction> = true
+	>
+	inline ReturnVector multi_maximize_lingrad(
+		DualObjectiveFunction f,
+		Vector guess,
 		real tolerance = OPTIMIZATION_MINGRAD_TOLERANCE,
 		unsigned int max_iter = OPTIMIZATION_MINGRAD_ITER) {
 
-		vec<real, N> x = guess;
-		vec<real, N> grad;
-		unsigned int iter = 0;
+		using ArgType = typename _internal::func_helper<DualObjectiveFunction>::first_arg_type;
 
-		do {
-
-			grad = -gradient(f, x);
-
-			// Maximize f(x + gamma * gradient) in [-1, 0]
-			// using Golden Section extrema search
-			real gamma = maximize_goldensection(
-				[f, x, grad](real gamma){
-					return f(multidual<N>::make_argument(x + gamma * grad)).Re();
-				}, -1, 0);
-
-			// Fallback value
-			if(-gamma <= MACH_EPSILON)
-				gamma = OPTIMIZATION_MINGRAD_GAMMA;
-
-			x += gamma * grad;
-			iter++;
-
-		} while(grad.norm() > OPTIMIZATION_MINGRAD_TOLERANCE && iter <= max_iter);
-
-		if(iter > max_iter) {
-			TH_MATH_ERROR("multi_maximize_lingrad", iter, MathError::NoConvergence);
-			return vec<real, N>(nan());
-		}
-
-		return x;
+		return multi_minimize_lingrad(
+			[f](ArgType x) { return -f(x); },
+			guess, tolerance, max_iter
+		);
 	}
 
 
@@ -197,11 +205,16 @@ namespace theoretica {
 	/// the algorithm at, defaults to OPTIMIZATION_MINGRAD_TOLERANCE.
 	/// @return The coordinates of the local minimum, 
 	/// NaN if the algorithm did not converge.
-	template<unsigned int N>
-	inline vec<real, N> multi_minimize(
-		multidual<N>(*f)(vec<multidual<N>, N>),
-		vec<real, N> guess = vec<real, N>(0), real tolerance = OPTIMIZATION_MINGRAD_TOLERANCE) {
-
+	template <
+		typename Vector = vec<real>,
+		typename ReturnVector = Vector,
+		typename DualObjectiveFunction,
+		autodiff::enable_scalar_field<DualObjectiveFunction> = true
+	>
+	inline ReturnVector multi_minimize(
+		DualObjectiveFunction f, Vector guess,
+		real tolerance = OPTIMIZATION_MINGRAD_TOLERANCE
+	) {
 		return multi_minimize_lingrad(f, guess, tolerance);
 	}
 
@@ -215,12 +228,17 @@ namespace theoretica {
 	/// the algorithm at, defaults to OPTIMIZATION_MINGRAD_TOLERANCE.
 	/// @return The coordinates of the local maximum, 
 	/// NaN if the algorithm did not converge.
-	template<unsigned int N>
-	inline vec<real, N> multi_maximize(
-		multidual<N>(*f)(vec<multidual<N>, N>),
-		vec<real, N> guess = vec<real, N>(0), real tolerance = OPTIMIZATION_MINGRAD_TOLERANCE) {
-
-		return multi_maximize_lingrad<N>(f, guess, tolerance);
+	template <
+		typename Vector = vec<real>,
+		typename ReturnVector = Vector,
+		typename DualObjectiveFunction,
+		autodiff::enable_scalar_field<DualObjectiveFunction> = true
+	>
+	inline ReturnVector multi_maximize(
+		DualObjectiveFunction f, Vector guess,
+		real tolerance = OPTIMIZATION_MINGRAD_TOLERANCE
+	) {
+		return multi_maximize_lingrad(f, guess, tolerance);
 	}
 
 }

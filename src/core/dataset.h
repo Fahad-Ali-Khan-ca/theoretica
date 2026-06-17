@@ -1,6 +1,7 @@
 
 ///
-/// @file core/dataset.h Operations on datasets
+/// @file core/dataset.h Operations on datasets and generic ordered sets of numbers.
+/// The Vector type must have size() and operator[]() methods (e.g. std::vector<real> and vec<real>)
 ///
 
 #ifndef THEORETICA_DATASET_H
@@ -17,11 +18,6 @@
 
 
 namespace theoretica {
-
-
-	// Operations on datasets and generic ordered sets of numbers
-	// The Vector type must have size() and operator[]() methods
-	// (e.g. std::vector<real> and vec<real>)
 
 
 	/// Compute the product of a set of values
@@ -239,7 +235,7 @@ namespace theoretica {
 	}
 
 
-	/// Apply a function to a set of values element-wise.
+	/// Transform a vector by applying a function to each of its elements.
 	/// @note Unlike functions in the parallel namespace,
 	/// this routine is not parallelized.
 	///
@@ -247,7 +243,7 @@ namespace theoretica {
 	/// @param X The vector to modify the elements of
 	/// @return A reference to the modified vector
 	template<typename Vector, typename Function>
-	inline Vector& apply(Function f, Vector& X) {
+	inline Vector& transform(Function f, Vector& X) {
 
 		for (unsigned int i = 0; i < X.size(); i++)
 			X[i] = f(X[i]);
@@ -256,7 +252,8 @@ namespace theoretica {
 	}
 
 
-	/// Get a new vector obtained by applying the function element-wise.
+	/// Overwrite a vector by applying a function to the elements
+	/// of another vector. The two vectors must have the same size.
 	///
 	/// @param f The function to apply
 	/// @param src The input vector
@@ -267,8 +264,7 @@ namespace theoretica {
 
 		if(src.size() != dest.size()) {
 			TH_MATH_ERROR("th::map", dest.size(), MathError::InvalidArgument);
-			dest = Vector2(nan());
-			return dest;
+			return algebra::vec_error(dest);
 		}
 
 		for (unsigned int i = 0; i < src.size(); i++)
@@ -333,7 +329,7 @@ namespace theoretica {
 
 		if(!X.size()) {
 			TH_MATH_ERROR("max", X.size(), MathError::InvalidArgument);
-			return Type(nan());
+			return make_error<Type>();
 		}
 
 		auto curr = X[0];
@@ -354,7 +350,7 @@ namespace theoretica {
 
 		if(!X.size()) {
 			TH_MATH_ERROR("min", X.size(), MathError::InvalidArgument);
-			return Type(nan());
+			return make_error<Type>();
 		}
 
 		auto curr = X[0];

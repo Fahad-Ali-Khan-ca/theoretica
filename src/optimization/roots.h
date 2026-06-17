@@ -12,6 +12,7 @@
 #include "../autodiff/dual2.h"
 #include "../algebra/vec.h"
 #include "../complex/complex.h"
+#include "../core/iter_result.h"
 
 
 namespace theoretica {
@@ -24,12 +25,14 @@ namespace theoretica {
 	/// @param a The lower extreme of the interval
 	/// @param b The upper extreme of the interval
 	/// @param steps The number of sub-intervals to check (defaults to 10)
-	template<typename RealFunction, typename Vector = vec2>
-	inline std::vector<Vector> find_root_intervals(
+	/// @return A vector of pairs of real numbers, where each pair (x1, x2)
+	/// represents a bracketing interval potentially containing a root.
+	template<typename RealFunction, typename Bracket = vec2>
+	inline std::vector<Bracket> find_root_brackets(
 		RealFunction f, real a, real b, unsigned int steps = 10) {
 
-		std::vector<Vector> res;
-		const real dx = (b - a) / (real) steps;
+		std::vector<Bracket> res;
+		const real dx = (b - a) / steps;
 
 		for (unsigned int i = 0; i < steps; ++i) {
 			
@@ -52,22 +55,23 @@ namespace theoretica {
 	/// @param b The upper extreme of the interval.
 	/// @param tol The minimum half-length of the bracketing interval to stop
 	/// the algorithm, so that \f$|x_r - x_l| \leq 2\epsilon\f$.
-	/// @return The coordinate of the root of the function,
-	/// or NaN if the algorithm did not converge.
+	/// @return An iter_result object containing the root (value field),
+	/// as well as information about algorithm convergence. The residual
+	/// is defined as half the width of the final bracketing interval.
 	template<typename RealFunction>
-	inline real root_bisect(
+	inline iter_result<real> root_bisect(
 		RealFunction f, real a, real b,
 		real tol = OPTIMIZATION_TOL,
 		unsigned int max_iter = OPTIMIZATION_BISECTION_ITER) {
 
 		if(a > b) {
 			TH_MATH_ERROR("root_bisect", a, MathError::InvalidArgument);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::InvalidInput);
 		}
 
 		if(f(a) * f(b) >= 0) {
 			TH_MATH_ERROR("root_bisect", f(a) * f(b), MathError::InvalidArgument);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::InvalidInput);
 		}
 
 		real x_avg = 0.0;
@@ -90,10 +94,10 @@ namespace theoretica {
 
 		if(iter > max_iter) {
 			TH_MATH_ERROR("root_bisect", x_avg, MathError::NoConvergence);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::MaxIterations, iter, abs(x_max - x_min) / 2.0);
 		}
 
-		return x_avg;
+		return iter_result<real>(x_avg, iter, abs(x_max - x_min) / 2.0);
 	}
 
 
@@ -114,10 +118,11 @@ namespace theoretica {
 	/// give more importance to the regula falsi estimate.
 	/// @param k1 A hyper-parameter of the algorithm, influences the truncation step
 	/// (defaults to \f$0.2 / (b - a)\f$, following the authors' results).
-	/// @return The coordinate of the root of the function,
-	/// or NaN if the algorithm did not converge.
+	/// @return An iter_result object containing the root (value field),
+	/// as well as information about algorithm convergence. The residual
+	/// is defined as half the width of the final bracketing interval.
 	template<typename RealFunction>
-	inline real root_itp(
+	inline iter_result<real> root_itp(
 		RealFunction f, real a, real b, real tol = OPTIMIZATION_TOL,
 		unsigned int n0 = 1, real k1 = 0.0) {
 
@@ -127,7 +132,7 @@ namespace theoretica {
 
 		if(a > b) {
 			TH_MATH_ERROR("root_itp", a, MathError::InvalidArgument);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::InvalidInput);
 		}
 
 		real y_a = f(a);
@@ -135,7 +140,7 @@ namespace theoretica {
 
 		if(y_a * y_b >= 0) {
 			TH_MATH_ERROR("root_itp", y_a * y_b, MathError::InvalidArgument);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::InvalidInput);
 		}
 
 		// Monotonicity of the function
@@ -186,7 +191,8 @@ namespace theoretica {
 				a = x_new;
 				y_a = y_new;
 			} else {
-				return x_new;
+				// Falls exactly on the zero
+				return iter_result<real>(x_new, iter, 0.0);
 			}
 
 			eps *= 0.5;
@@ -195,10 +201,10 @@ namespace theoretica {
 
 		if(abs(b - a) > 2 * tol) {
 			TH_MATH_ERROR("root_itp", (a + b) / 2.0, MathError::NoConvergence);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::MaxIterations, iter, abs(b - a) / 2.0);
 		}
 
-		return (a + b) / 2.0;
+		return iter_result<real>((a + b) / 2.0, iter, abs(b - a) / 2.0);
 	}
 
 
@@ -211,30 +217,39 @@ namespace theoretica {
 	/// when \f$|f(x_n)| \leq \epsilon\f$.
 	/// @param max_iter The maximum number of iterations to perform, after which
 	/// the algorithm is assumed to not have converged.
-	/// @return The coordinate of the root of the function,
-	/// or NaN if the algorithm did not converge.
+	/// @return An iter_result object containing the root (value field),
+	/// as well as information about algorithm convergence.
 	template<typename RealFunction>
-	inline real root_newton(
+	inline iter_result<real> root_newton(
 		RealFunction f, RealFunction Df, real guess = 0.0,
 		real tol = OPTIMIZATION_TOL, unsigned int max_iter = OPTIMIZATION_NEWTON_ITER) {
 
 		real x = guess;
 		real f_x = inf();
+		real Df_x = 0;
 		unsigned int iter = 0;
 
 		while(abs(f_x) > tol && iter <= max_iter) {
 
+			Df_x = Df(x);
+
+			// Check for division by zero
+			if (abs(Df_x) < MACH_EPSILON) {
+				TH_MATH_ERROR("root_newton", Df_x, MathError::DivByZero);
+				return iter_result<real>(ConvergenceStatus::Diverged, iter, f_x);
+			}
+
 			f_x = f(x);
-			x = x - (f_x / Df(x));
+			x = x - (f_x / Df_x);
 			iter++;
 		}
 
 		if(iter > max_iter) {
 			TH_MATH_ERROR("root_newton", x, MathError::NoConvergence);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::MaxIterations, iter, abs(f_x));
 		}
 
-		return x;
+		return iter_result<real>(x, iter, abs(f_x));
 	}
 
 
@@ -248,17 +263,16 @@ namespace theoretica {
 	/// when \f$|f(x_n)| \leq \epsilon\f$.
 	/// @param max_iter The maximum number of iterations to perform, after which
 	/// the algorithm is assumed to not have converged.
-	/// @return The coordinate of the root of the function,
-	/// or NaN if the algorithm did not converge.
-	inline real root_newton(
+	/// @return An iter_result object containing the root (value field),
+	/// as well as information about algorithm convergence.
+	inline iter_result<real> root_newton(
 		dual(*f)(dual), real guess = 0,
 		real tol = OPTIMIZATION_TOL,
 		unsigned int max_iter = OPTIMIZATION_NEWTON_ITER) {
 
 		real x = guess;
-		unsigned int iter = 0;
-
 		dual s = dual(inf(), 0.0);
+		unsigned int iter = 0;
 
 		while(abs(s.Re()) > tol && iter <= max_iter) {
 
@@ -271,10 +285,10 @@ namespace theoretica {
 
 		if(iter > max_iter) {
 			TH_MATH_ERROR("root_newton", x, MathError::NoConvergence);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::MaxIterations, iter, abs(s.Re()));
 		}
 
-		return x;
+		return iter_result<real>(x, iter, abs(s.Re()));
 	}
 
 
@@ -293,8 +307,8 @@ namespace theoretica {
 		typename Type = real,
 		typename ComplexFunction = std::function<complex<Type>(complex<Type>)>
 	>
-	inline complex<Type> root_newton(
-		ComplexFunction f, ComplexFunction Df, complex<Type> guess,
+	inline iter_result<complex<Type>> root_newton(
+		ComplexFunction f, ComplexFunction df, complex<Type> guess,
 		real tol = OPTIMIZATION_TOL,
 		unsigned int max_iter = OPTIMIZATION_NEWTON_ITER) {
 
@@ -302,7 +316,7 @@ namespace theoretica {
 		complex<Type> f_z = Type(inf());
 		unsigned int iter = 0;
 
-		while(f_z * f_z.conjugate() > tol * tol && iter <= max_iter) {
+		while(f_z * f_z.conjugate() > (tol * tol) && iter <= max_iter) {
 
 			f_z = f(z);
 			z = z - (f_z / df(z));
@@ -311,10 +325,10 @@ namespace theoretica {
 
 		if(iter > max_iter) {
 			TH_MATH_ERROR("root_newton", z.Re(), MathError::NoConvergence);
-			return complex<Type>(nan(), nan());
+			return iter_result<complex<Type>>(ConvergenceStatus::MaxIterations, iter, f_z.norm());
 		}
 
-		return z;
+		return iter_result<complex<Type>>(z, iter, f_z.norm());
 	}
 
 
@@ -328,10 +342,10 @@ namespace theoretica {
 	/// when \f$|f(x_n)| \leq \epsilon\f$.
 	/// @param max_iter The maximum number of iterations to perform, after which
 	/// the algorithm is assumed to not have converged.
-	/// @return The coordinate of the root of the function,
-	/// or NaN if the algorithm did not converge.
+	/// @return An iter_result object containing the root (value field),
+	/// as well as information about algorithm convergence.
 	template<typename RealFunction>
-	inline real root_halley(
+	inline iter_result<real> root_halley(
 		RealFunction f, RealFunction Df,
 		RealFunction D2f, real guess = 0,
 		real tol = OPTIMIZATION_TOL,
@@ -352,10 +366,10 @@ namespace theoretica {
 
 		if(iter > max_iter) {
 			TH_MATH_ERROR("root_halley", x, MathError::NoConvergence);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::MaxIterations, iter, abs(f_x));
 		}
 
-		return x;
+		return iter_result<real>(x, iter, abs(f_x));
 	}
 
 
@@ -370,9 +384,9 @@ namespace theoretica {
 	/// when \f$|f(x_n)| < \epsilon\f$.
 	/// @param max_iter The maximum number of iterations to perform, after which
 	/// the algorithm is assumed to not have converged.
-	/// @return The coordinate of the root of the function,
-	/// or NaN if the algorithm did not converge.
-	inline real root_halley(
+	/// @return An iter_result object containing the root (value field),
+	/// as well as information about algorithm convergence.
+	inline iter_result<real> root_halley(
 		dual2(*f)(dual2), real guess = 0,
 		real tol = OPTIMIZATION_TOL,
 		unsigned int max_iter = OPTIMIZATION_HALLEY_ITER) {
@@ -397,48 +411,10 @@ namespace theoretica {
 
 		if(iter > max_iter) {
 			TH_MATH_ERROR("root_halley", x, MathError::NoConvergence);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::MaxIterations, iter, abs(s.Re()));
 		}
 
-		return x;
-	}
-
-
-	/// Find a root of a univariate real function using Steffensen's method.
-	///
-	/// @param f The real function to search the root of.
-	/// @param guess The initial guess (defaults to 0).
-	/// @param tol The \f$\epsilon\f$ tolerance value to stop the algorithm
-	/// when \f$|f(x_n)| \leq \epsilon\f$.
-	/// @param max_iter The maximum number of iterations to perform, after which
-	/// the algorithm is assumed to not have converged.
-	/// @return The coordinate of the root of the function,
-	/// or NaN if the algorithm did not converge.
-	template<typename RealFunction>
-	inline real root_steffensen(
-		RealFunction f, real guess = 0,
-		real tol = OPTIMIZATION_TOL,
-		unsigned int max_iter = OPTIMIZATION_STEFFENSEN_ITER) {
-
-		real x = guess;
-		real f_x = inf();
-		unsigned int iter = 0;
-
-		while(abs(f_x) > tol && iter <= max_iter) {
-
-			const real f_x = f(x);
-			const real g_x = (f(x + f_x) / f_x) - 1;
-
-			x = x - (f_x / g_x);
-			iter++;
-		}
-
-		if(iter > max_iter) {
-			TH_MATH_ERROR("root_steffensen", x, MathError::NoConvergence);
-			return nan();
-		}
-
-		return x;
+		return iter_result<real>(x, iter, abs(s.Re()));
 	}
 
 
@@ -452,15 +428,15 @@ namespace theoretica {
 	/// when \f$|f(x_n)| \leq \epsilon\f$.
 	/// @param max_iter The maximum number of iterations to perform, after which
 	/// the algorithm is assumed to not have converged.
-	/// @return The coordinate of the root of the function,
-	/// or NaN if the algorithm did not converge.
+	/// @return An iter_result object containing the root (value field),
+	/// as well as information about algorithm convergence.
 	///
 	/// Chebyshev's method can be derived by expanding the inverse of the function
 	/// around the zero and truncating the series. This method is particularly suited
 	/// when the derivatives of the function are easy to compute, especially
 	/// when using automatic differentiation.
 	template<typename RealFunction>
-	inline real root_chebyshev(
+	inline iter_result<real> root_chebyshev(
 		RealFunction f, RealFunction Df,
 		RealFunction D2f, real guess = 0,
 		real tol = OPTIMIZATION_TOL,
@@ -483,10 +459,10 @@ namespace theoretica {
 
 		if(iter > max_iter) {
 			TH_MATH_ERROR("root_chebyshev", x, MathError::NoConvergence);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::MaxIterations, iter, abs(f_x));
 		}
 
-		return x;
+		return iter_result<real>(x, iter, abs(f_x));
 	}
 
 
@@ -500,15 +476,15 @@ namespace theoretica {
 	/// when \f$|f(x_n)| \leq \epsilon\f$.
 	/// @param max_iter The maximum number of iterations to perform, after which
 	/// the algorithm is assumed to not have converged.
-	/// @return The coordinate of the root of the function,
-	/// or NaN if the algorithm did not converge.
+	/// @return An iter_result object containing the root (value field),
+	/// as well as information about algorithm convergence.
 	///
 	/// Chebyshev's method can be derived by expanding the inverse of the function
 	/// around the zero and truncating the series. This method is particularly suited
 	/// when the derivatives of the function are easy to compute, especially
 	/// when using automatic differentiation. For example, the exponential needs to be
 	/// computed only once to evaluate the function and its derivatives.
-	inline real root_chebyshev(
+	inline iter_result<real> root_chebyshev(
 		dual2(*f)(dual2), real guess = 0,
 		real tol = OPTIMIZATION_TOL,
 		unsigned int max_iter = OPTIMIZATION_CHEBYSHEV_ITER) {
@@ -531,10 +507,10 @@ namespace theoretica {
 
 		if(iter > max_iter) {
 			TH_MATH_ERROR("root_chebyshev", x, MathError::NoConvergence);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::MaxIterations, iter, abs(s.Re()));
 		}
 
-		return x;
+		return iter_result<real>(x, iter, abs(s.Re()));
 	}
 
 
@@ -547,15 +523,15 @@ namespace theoretica {
 	/// when \f$|f(x_n)| \leq \epsilon\f$.
 	/// @param max_iter The maximum number of iterations to perform, after which
 	/// the algorithm is assumed to not have converged.
-	/// @return The coordinate of the root of the function,
-	/// or NaN if the algorithm did not converge.
+	/// @return An iter_result object containing the root (value field),
+	/// as well as information about algorithm convergence.
 	///
 	/// Ostrowski's method is a 4-th order method using 2 function evaluations
 	/// and 1 function evaluation. It combines a Newton step with a
 	/// corrective coefficient. This method does not have an overload using
 	/// automatic differentiation as it would hinder the performance benefit.
 	template<typename RealFunction>
-	inline real root_ostrowski(
+	inline iter_result<real> root_ostrowski(
 		RealFunction f, RealFunction Df, real guess = 0.0,
 		real tol = OPTIMIZATION_TOL,
 		unsigned int max_iter = OPTIMIZATION_OSTROWSKI_ITER) {
@@ -578,10 +554,10 @@ namespace theoretica {
 
 		if(iter > max_iter) {
 			TH_MATH_ERROR("root_ostrowski", x, MathError::NoConvergence);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::MaxIterations, iter, abs(f_x));
 		}
 
-		return x;
+		return iter_result<real>(x, iter, abs(f_x));
 	}
 
 
@@ -594,8 +570,8 @@ namespace theoretica {
 	/// when \f$|f(x_n)| \leq \epsilon\f$.
 	/// @param max_iter The maximum number of iterations to perform, after which
 	/// the algorithm is assumed to not have converged.
-	/// @return The coordinate of the root of the function,
-	/// or NaN if the algorithm did not converge.
+	/// @return An iter_result object containing the root (value field),
+	/// as well as information about algorithm convergence.
 	///
 	/// Jarrat's method is a 4-th order method which is particularly suited when
 	/// the derivative of the function is less computationally expensive than
@@ -603,7 +579,7 @@ namespace theoretica {
 	/// have an overload using automatic differentiation as it would hinder the
 	/// performance benefit.
 	template<typename RealFunction>
-	inline real root_jarrat(
+	inline iter_result<real> root_jarrat(
 		RealFunction f, RealFunction Df, real guess = 0.0,
 		real tol = OPTIMIZATION_TOL,
 		unsigned int max_iter = OPTIMIZATION_JARRAT_ITER) {
@@ -625,10 +601,33 @@ namespace theoretica {
 
 		if(iter > max_iter) {
 			TH_MATH_ERROR("root_jarrat", x, MathError::NoConvergence);
-			return nan();
+			return iter_result<real>(ConvergenceStatus::MaxIterations, iter, abs(f_x));
 		}
 
-		return x;
+		return iter_result<real>(x, iter, abs(f_x));
+	}
+
+
+	/// Use the best available algorithm to find a root of a univariate real function
+	/// inside a given bracketing interval, meaning that the interval is guaranteed
+	/// to have a single root inside it.
+	///
+	/// @param f The real function to search the root of.
+	/// @param a The lower extreme of the bracketing interval.
+	/// @param b The upper extreme of the bracketing interval.
+	/// @param tol The \f$\epsilon\f$ tolerance value to stop the algorithm
+	/// when \f$|f(x_n)| \leq \epsilon\f$.
+	/// @param max_iter The maximum number of iterations to perform, after which
+	/// the algorithm is assumed to not have converged.
+	/// @return An iter_result object containing the root (value field),
+	/// as well as information about algorithm convergence.
+	template<typename RealFunction>
+	inline iter_result<real> root(
+		RealFunction f, real a, real b,
+		real tol = OPTIMIZATION_TOL,
+		unsigned int max_iter = OPTIMIZATION_BISECTION_ITER) {
+		
+		return root_itp(f, a, b, tol, max_iter);
 	}
 
 
@@ -646,8 +645,8 @@ namespace theoretica {
 	///
 	/// @note If the number of roots inside the interval is completely unknown,
 	/// using many more steps should be preferred, to ensure all roots are found.
-	template<typename RealFunction>
-	inline std::vector<real> roots(
+	template<typename RealFunction, typename Vector = vec<real>>
+	inline Vector roots(
 		RealFunction f, real a, real b,
 		real tol = OPTIMIZATION_TOL, real steps = 10) {
 
@@ -657,10 +656,11 @@ namespace theoretica {
 		}
 
 		// Find candidate intervals
-		std::vector<vec2> intervals = find_root_intervals(f, a, b, steps);
+		auto intervals = find_root_brackets(f, a, b, steps);
 
-		std::vector<real> res;
-		res.reserve(intervals.size());
+		Vector res;
+		res.resize(intervals.size(), nan());
+		size_t idx = 0;
 
 		// Iterate through all candidate intervals and refine the results
 		for (unsigned int i = 0; i < intervals.size(); ++i) {
@@ -668,19 +668,24 @@ namespace theoretica {
 			// Check whether the extremes of the candidate intervals
 			// happen to coincide with the roots
 			if(abs(f(intervals[i][0])) <= MACH_EPSILON) {
-				res.push_back(intervals[i][0]);
+				res[idx] = intervals[i][0];
+				idx++;
 				continue;
 			}
 
 			if(abs(f(intervals[i][1])) <= MACH_EPSILON) {
-				res.push_back(intervals[i][1]);
+				res[idx] = intervals[i][1];
+				idx++;
 				continue;
 			}
 
 			// Approximate the roots using bisection inside each interval
-			res.push_back(
-				root_bisect(f, intervals[i][0], intervals[i][1], tol)
-			);
+			real r = root_bisect(f, intervals[i][0], intervals[i][1], tol);
+
+			if (!is_nan(r)) {
+				res[idx] = r;
+				idx++;
+			}
 		}
 
 		return res;
@@ -690,36 +695,37 @@ namespace theoretica {
 	/// Find all the roots of a polynomial.
 	/// An interval bound on the roots is found using Cauchy's theorem.
 	///
+	/// For polynomials with very unevenly distributed roots, the algorithm may
+	/// fail to find all roots, in this case the steps parameter should be increased
+	/// to ensure all roots are found.
+	///
 	/// @param p The polynomial to search the roots of.
-	/// @param steps The number of steps to use
-	/// (defaults to twice the polynomial's order).
+	/// @param steps The number of steps to use (defaults to 10 times the polynomial's order).
 	/// @return A vector of the roots of the polynomial that were found.
-	template<typename Field>
-	inline std::vector<Field> roots(
-		const polynomial<Field>& p,
-		real tolerance = OPTIMIZATION_TOL,
+	template<typename Field, typename Vector = vec<Field>>
+	inline Vector roots_polynomial(
+		const polynomial<Field>& p, real tolerance = OPTIMIZATION_TOL,
 		unsigned int steps = 0) {
+		
+		// Real polynomial degree
+		const unsigned int p_order = p.find_order();
+		if (p_order == 0) {
+			TH_MATH_ERROR("roots_polynomial", p.coeff[0], MathError::InvalidArgument);
+			return {nan()};
+		}
 
-		// Effective order of the polynomial
-		const unsigned int n = p.find_order();
-		p /= p.coeff[n];
+		// Normalize the polynomial by the leading coefficient to apply Cauchy's bound
+		polynomial<Field> p_norm = p / p.coeff[p_order];
+		Field a_max = 0;
 
-		// Absolute value of the highest coefficient
-		Field a_hi = abs(p.coeff[n]);
-		Field a_sum = 0;
-
-		// Sum the absolute values of the lesser coefficients
-		for (unsigned int i = 0; i < n; ++i)
-			a_sum += abs(p.coeff[i]);
+		// Find the maximum absolute coefficient
+		for (unsigned int i = 0; i < p_order - 1; ++i)
+			a_max = max(a_max, abs(p_norm.coeff[i]));
 
 		// The roots are bounded in absolute value by the maximum
-		const Field M = max(a_hi, a_sum);
+		const Field M = 1 + a_max;
 
-		// Back track from the bounds to the first sign inversion ?
-		
-		return roots(
-			[p](real x) { return p(x); },
-			-M, M, tolerance, steps ? steps : (2 * n));
+		return roots(p_norm, -M, M, tolerance, steps > 0 ? steps : 10 * p_order);
 	}
 
 }

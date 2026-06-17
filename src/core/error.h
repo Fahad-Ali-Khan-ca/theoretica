@@ -6,14 +6,10 @@
 #ifndef THEORETICA_ERROR_H
 #define THEORETICA_ERROR_H
 
-#if defined(THEORETICA_THROW_EXCEPTIONS) || defined(THEORETICA_ONLY_EXCEPTIONS)
-
 #include <exception>
 
 #ifndef THEORETICA_NO_PRINT
 #include <sstream>
-#endif
-
 #endif
 
 #include <string>
@@ -108,9 +104,9 @@ namespace theoretica {
 	}
 
 
-#if defined(THEORETICA_THROW_EXCEPTIONS) || defined(THEORETICA_ONLY_EXCEPTIONS)
-
-	class math_exception : std::exception {
+	/// @class math_exception
+	/// A class for representing mathematical errors. 
+	class math_exception : public std::exception {
 
 	private:
 		MathError err;
@@ -120,6 +116,7 @@ namespace theoretica {
 		real val;
 
 	public:
+	
 		math_exception(MathError a_err, const std::string& a_func_name,
 			const std::string& a_file_name, unsigned int a_code_line, real a_val)
 				: err(a_err), func_name(a_func_name), file_name(a_file_name),
@@ -173,18 +170,7 @@ namespace theoretica {
 
 			err_str << file_name << "(" << code_line << "):";
 			err_str << func_name << "(" << val << "): ";
-
-			switch(err) {
-				case MathError::None: err_str << "No error"; break;
-				case MathError::DivByZero: err_str << "Division by zero"; break;
-				case MathError::OutOfDomain:
-					err_str << "An argument was out of the domain of the called function"; break;
-				case MathError::ImpossibleOperation:
-					err_str << "A mathematically impossible operation was requested"; break;
-				case MathError::NoConvergence: err_str << "The algorithm did not converge"; break;
-				case MathError::InvalidArgument: err_str << "Invalid argument size or value"; break;
-				default: err_str << "Unknown error"; break;
-			}
+			err_str << th::to_string(err);
 
 			return err_str.str();
 		}
@@ -206,8 +192,6 @@ namespace theoretica {
 
 	};
 
-#endif
-
 }
 
 
@@ -221,9 +205,6 @@ namespace theoretica {
 
 #define TH_MATH_ERROR(F_NAME, VALUE, EXCEPTION) \
 	{ throw theoretica::math_exception(EXCEPTION, F_NAME, __FILE__, __LINE__, VALUE); }
-
-#define TH_MATH_ERROR_R(F_NAME, VALUE, EXCEPTION) \
-	TH_MATH_ERROR(F_NAME, VALUE, EXCEPTION)
 
 // Throw exceptions and modify errno
 #elif defined(THEORETICA_THROW_EXCEPTIONS)
